@@ -11,7 +11,7 @@ mod cli;
 mod command;
 
 fn main() {
-    let mut table = Table::new();
+    let mut table = Table::new("test_db.db").unwrap();
     let parser = CliParser::new();
     let meta_cmd_handler = MetaCommandHandler::new();
     let sql_cmd_handler = SqlCommandHandler::new();
@@ -22,7 +22,10 @@ fn main() {
         let meta_cmd = meta_cmd_handler.handle(&user_input);
         if meta_cmd.is_some() {
             match meta_cmd.unwrap() {
-                MetaCommand::Exit => { break; }
+                MetaCommand::Exit => {
+                    table.flush().unwrap();
+                    break;
+                }
                 MetaCommand::Unknown => { continue; }
             }
         }
@@ -34,20 +37,17 @@ fn main() {
         );
         match statement {
             SqlCommand::Insert(row) => { table.insert(&row.serialize().unwrap()); }
-            SqlCommand::Select => { execute_select(&table) }
+            SqlCommand::Select => { execute_select(&mut table) }
             SqlCommand::Unknown => {}
         }
     }
 }
 
-fn execute_select(table: &Table) {
+fn execute_select(table: &mut Table) {
     let current_row_count = table.get_current_row_count();
     for i in 0..current_row_count {
         let data_opt = table.select(i);
-        if data_opt.is_none() {
-            continue;
-        } else {
-            println!("{:?}", Row::deserialize(data_opt.unwrap()).unwrap());
-        }
+
+        println!("{:?}", Row::deserialize(data_opt).unwrap());
     }
 }

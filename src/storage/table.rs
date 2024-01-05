@@ -1,55 +1,52 @@
+use std::fs::{File, OpenOptions};
+use std::io;
+use std::io::{Read, Seek, Write};
 use crate::storage::constant::{TABLE_MAX_PAGES, ROWS_PER_PAGE};
 use crate::storage::constant::{ROW_SIZE, PAGE_SIZE};
+use anyhow::Result;
 
 pub struct Table {
     current_rows: usize,
-    pages: Vec<Option<Page>>,
+    pager: Pager,
 }
 
 impl Table {
-    pub fn new() -> Self {
-        Self {
-            current_rows: 0,
-            pages: vec![None; TABLE_MAX_PAGES],
-        }
+    pub fn new(file_path: &str) -> Result<Self> {
+        let pager = Pager::new(file_path).unwrap();
+        Ok(Self {
+            current_rows: pager.rows_count,
+            pager,
+        })
     }
 
-    pub fn get_page_mut(&mut self, page_num: usize) -> &mut Page {
-        if self.pages[page_num].is_none() {
-            self.pages[page_num] = Some(Page::new());
-        }
-
-        self.pages[page_num].as_mut().unwrap()
-    }
 
     pub fn insert(&mut self, data: &[u8]) {
         let current_row_count = self.get_current_row_count();
         let page_num = current_row_count / ROWS_PER_PAGE;
-        let page = self.get_page_mut(page_num);
+        let page = self.pager.get_page_mut(page_num);
 
         page.write_slot(current_row_count, data);
         self.increment_current_row_count();
     }
 
-    pub fn select(&self, row_index: usize) -> Option<&[u8]> {
+    pub fn select(&mut self, row_index: usize) -> &[u8] {
         let page_num = row_index / ROWS_PER_PAGE;
-        let page = self.get_page_ref(page_num);
+        let page = self.pager.get_page_mut(page_num);
 
-        page.map(|page| page.read_slot(row_index))
-    }
-
-    // returns an optional reference to a page
-    fn get_page_ref(&self, page_num: usize) -> Option<&Page> {
-        self.pages[page_num].as_ref()
-    }
-
-    fn increment_current_row_count(&mut self) {
-        self.current_rows += 1;
+        page.read_slot(row_index)
     }
 
     // incapsulate current_rows
     pub fn get_current_row_count(&self) -> usize {
         self.current_rows
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        self.pager.flush()
+    }
+
+    fn increment_current_row_count(&mut self) {
+        self.current_rows += 1;
     }
 }
 
@@ -64,6 +61,12 @@ impl Page {
         Page { data: [0; PAGE_SIZE] }
     }
 
+    fn deserialize(data: &[u8]) -> Page {
+        let mut page = Page::new();
+        page.data.copy_from_slice(data);
+        page
+    }
+
     pub fn read_slot(&self, row_index: usize) -> &[u8] {
         let page_offset = row_index % ROWS_PER_PAGE;
         let byte_offset = page_offset * ROW_SIZE;
@@ -76,5 +79,92 @@ impl Page {
         let byte_offset = page_offset * ROW_SIZE;
 
         self.data[byte_offset..byte_offset + ROW_SIZE].copy_from_slice(bytes);
+    }
+}
+
+struct Pager {
+    file: File,
+    rows_count: usize,
+    pages: Vec<Option<Page>>,
+}
+
+impl Pager {
+    fn new(file_path: &str) -> Result<Self> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(file_path)
+            .unwrap_or_else(|err| panic!("Failed to open file {} {:?}", file_path, err));
+
+        let valid_rows = Self::calculate_valid_rows(&mut file)?;
+
+        Ok(Self {
+            file,
+            rows_count: valid_rows,
+            pages: vec![None; TABLE_MAX_PAGES],
+        })
+    }
+
+    pub fn get_page_mut(&mut self, page_num: usize) -> &mut Page {
+        if self.pages[page_num].is_none() {
+            //cache miss
+            Self::load_page_from_file(self, page_num);
+        }
+
+        self.pages[page_num].as_mut().unwrap()
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        for i in 0..self.pages.len() {
+            let page = self.pages[i];
+
+            match page {
+                None => { continue; }
+                Some(page) => {
+                    self.file.seek(io::SeekFrom::Start((i * PAGE_SIZE) as u64)).unwrap();
+                    self.file.write(&page.data).unwrap();
+                    self.file.flush().unwrap();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn load_page_from_file(&mut self, page_num: usize) {
+        if page_num <= self.rows_count {
+            self.file.seek(io::SeekFrom::Start((page_num * PAGE_SIZE) as u64)).unwrap();
+            let mut buffer = vec![0; PAGE_SIZE];
+            self.file.read(&mut buffer).unwrap();
+            self.pages[page_num] = Some(Page::deserialize(&buffer));
+        }
+    }
+
+    fn calculate_valid_rows(file: &mut File) -> io::Result<usize> {
+        let mut valid_rows = 0;
+        let mut buffer = [0u8; PAGE_SIZE];
+
+        loop {
+            match file.read(&mut buffer) {
+                Ok(0) => break, // End of file
+                Ok(bytes_read) => {
+                    // Calculate the number of complete rows in the read buffer
+                    let num_rows = bytes_read / ROW_SIZE;
+
+                    // Process each row in the page
+                    for i in 0..num_rows {
+                        let row_start = i * ROW_SIZE;
+                        let row = &buffer[row_start..row_start + ROW_SIZE];
+                        if row.iter().any(|&byte| byte != 0) {
+                            valid_rows += 1;
+                        }
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(valid_rows)
     }
 }
