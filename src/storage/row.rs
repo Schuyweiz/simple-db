@@ -1,7 +1,7 @@
-use std::convert::TryInto;
+use crate::storage::constant::{EMAIL_OFFSET, ID_OFFSET, USER_NAME_OFFSET};
+use crate::storage::constant::{EMAIL_SIZE, ID_SIZE, ROW_SIZE, USER_NAME_SIZE};
 use anyhow::Result;
-use crate::storage::constant::{EMAIL_SIZE, USER_NAME_SIZE, ROW_SIZE, ID_SIZE};
-use crate::storage::constant::{ID_OFFSET, EMAIL_OFFSET, USER_NAME_OFFSET};
+use std::convert::TryInto;
 
 //todo: enforce char count for the string smh
 #[derive(Debug)]
@@ -38,7 +38,7 @@ impl Row {
         let id = u32::from_ne_bytes(
             bytes[ID_OFFSET..ID_SIZE]
                 .try_into()
-                .expect("Error when converting bytes to id")
+                .expect("Error when converting bytes to id"),
         );
 
         //todo: problems with order might arise, need to think how to bind it to fields order
@@ -60,9 +60,7 @@ impl Row {
             .position(|&byte| byte == 0u8)
             .unwrap_or(target_size);
 
-        String::from_utf8(
-            bytes[position_start..position_start + offset].to_vec())
-            .expect("Invalid UTF-8 sequence in byte array."
-            )
+        String::from_utf8(bytes[position_start..position_start + offset].to_vec())
+            .expect("Invalid UTF-8 sequence in byte array.")
     }
 }
