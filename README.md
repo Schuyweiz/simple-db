@@ -26,7 +26,7 @@ To run this project, you need to install Rust and its package manager, Cargo. He
 1. Clone the repository:
 
     ```bash
-    git clone https://github.com/your-username/simpledb.git
+    git clone git@github.com:Schuyweiz/simple-db.git
     ```
 
 2. Navigate to the project directory:
