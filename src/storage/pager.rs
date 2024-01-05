@@ -1,4 +1,5 @@
-use crate::storage::constant::{PAGE_SIZE, ROWS_PER_PAGE, ROW_SIZE, TABLE_MAX_PAGES};
+use crate::storage::constant::{PAGE_SIZE, ROW_SIZE, TABLE_MAX_PAGES};
+use crate::storage::page::Page;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Read, Seek, Write};
@@ -36,15 +37,6 @@ impl Pager {
         self.pages[page_num].as_mut().unwrap()
     }
 
-    pub fn get_page_ref(&mut self, page_num: usize) -> &Page {
-        if self.pages[page_num].is_none() {
-            //cache miss
-            Self::load_page_from_file(self, page_num);
-        }
-
-        self.pages[page_num].as_ref().unwrap()
-    }
-
     pub fn flush(&mut self) -> anyhow::Result<()> {
         for i in 0..self.pages.len() {
             let page = self.pages[i];
@@ -57,7 +49,7 @@ impl Pager {
                     self.file
                         .seek(io::SeekFrom::Start((i * PAGE_SIZE) as u64))
                         .unwrap();
-                    self.file.write(&page.data).unwrap();
+                    self.file.write(page.get_page_data()).unwrap();
                     self.file.flush().unwrap();
                 }
             }
@@ -106,52 +98,5 @@ impl Pager {
         }
 
         Ok(valid_rows)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Page {
-    data: [u8; PAGE_SIZE],
-}
-
-impl Page {
-    fn new() -> Page {
-        Page {
-            data: [0; PAGE_SIZE],
-        }
-    }
-
-    fn deserialize(data: &[u8]) -> Page {
-        let mut page = Page::new();
-        page.data.copy_from_slice(data);
-        page
-    }
-
-    pub fn read_from_slot(&self, row_index: usize) -> &[u8] {
-        let page_offset = row_index % ROWS_PER_PAGE;
-        let byte_offset = page_offset * ROW_SIZE;
-
-        &self.data[byte_offset..byte_offset + ROW_SIZE]
-    }
-
-    pub fn get_slot(&mut self, row_index: usize) -> &mut [u8] {
-        let page_offset = row_index % ROWS_PER_PAGE;
-        let byte_offset = page_offset * ROW_SIZE;
-
-        &mut self.data[byte_offset..byte_offset + ROW_SIZE]
-    }
-
-    pub fn get_slot_ref(&self, row_index: usize) -> &[u8] {
-        let page_offset = row_index % ROWS_PER_PAGE;
-        let byte_offset = page_offset * ROW_SIZE;
-
-        &self.data[byte_offset..byte_offset + ROW_SIZE]
-    }
-
-    pub fn write_to_slot(&mut self, row_index: usize, bytes: &[u8]) {
-        let page_offset = row_index % ROWS_PER_PAGE;
-        let byte_offset = page_offset * ROW_SIZE;
-
-        self.data[byte_offset..byte_offset + ROW_SIZE].copy_from_slice(bytes);
     }
 }

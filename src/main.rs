@@ -3,9 +3,9 @@ use command::meta_cmd_handler::MetaCommand;
 use command::meta_cmd_handler::MetaCommandHandler;
 use command::sql_cmd_handler::SqlCommand;
 use command::sql_cmd_handler::SqlCommandHandler;
+use storage::cursor::Cursor;
 use storage::row::Row;
 use storage::table::Table;
-use storage::cursor::Cursor;
 
 mod cli;
 mod command;
@@ -40,12 +40,7 @@ fn main() {
             .unwrap_or_else(|error| panic!("Failed to parse command due to {:?}", error));
 
         match sql_cmd {
-            SqlCommand::Insert(row) => {
-                let mut cursor = Cursor::table_end(&mut table);
-                let target_bytes = cursor.cursor_value();
-                target_bytes.copy_from_slice(&row.serialize().unwrap());
-                table.increment_current_row_count()
-            }
+            SqlCommand::Insert(row) => execute_insert(&mut table, row),
             SqlCommand::Select => execute_select(&mut table),
             SqlCommand::Unknown => {}
         }
@@ -59,4 +54,11 @@ fn execute_select(table: &mut Table) {
         println!("{:?}", Row::deserialize(row_bytes));
         cursor.advance();
     }
+}
+
+fn execute_insert(table: &mut Table, row: Row) {
+    let mut cursor = Cursor::table_end(table);
+    let target_bytes = cursor.cursor_value();
+    target_bytes.copy_from_slice(&row.serialize().unwrap());
+    table.increment_current_row_count()
 }
