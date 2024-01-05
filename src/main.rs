@@ -5,6 +5,7 @@ use command::sql_cmd_handler::SqlCommand;
 use command::sql_cmd_handler::SqlCommandHandler;
 use storage::row::Row;
 use storage::table::Table;
+use storage::cursor::Cursor;
 
 mod cli;
 mod command;
@@ -40,7 +41,10 @@ fn main() {
 
         match sql_cmd {
             SqlCommand::Insert(row) => {
-                table.insert(&row.serialize().unwrap());
+                let mut cursor = Cursor::table_end(&mut table);
+                let target_bytes = cursor.cursor_value();
+                target_bytes.copy_from_slice(&row.serialize().unwrap());
+                table.increment_current_row_count()
             }
             SqlCommand::Select => execute_select(&mut table),
             SqlCommand::Unknown => {}
@@ -49,9 +53,10 @@ fn main() {
 }
 
 fn execute_select(table: &mut Table) {
-    let current_row_count = table.get_current_row_count();
-    for i in 0..current_row_count {
-        let data_opt = table.select(i);
-        println!("{:?}", Row::deserialize(data_opt).unwrap());
+    let mut cursor = Cursor::table_start(table);
+    while !cursor.is_end_of_table() {
+        let row_bytes = cursor.cursor_value();
+        println!("{:?}", Row::deserialize(row_bytes));
+        cursor.advance();
     }
 }

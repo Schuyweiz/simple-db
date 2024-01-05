@@ -36,6 +36,15 @@ impl Pager {
         self.pages[page_num].as_mut().unwrap()
     }
 
+    pub fn get_page_ref(&mut self, page_num: usize) -> &Page {
+        if self.pages[page_num].is_none() {
+            //cache miss
+            Self::load_page_from_file(self, page_num);
+        }
+
+        self.pages[page_num].as_ref().unwrap()
+    }
+
     pub fn flush(&mut self) -> anyhow::Result<()> {
         for i in 0..self.pages.len() {
             let page = self.pages[i];
@@ -119,6 +128,20 @@ impl Page {
     }
 
     pub fn read_from_slot(&self, row_index: usize) -> &[u8] {
+        let page_offset = row_index % ROWS_PER_PAGE;
+        let byte_offset = page_offset * ROW_SIZE;
+
+        &self.data[byte_offset..byte_offset + ROW_SIZE]
+    }
+
+    pub fn get_slot(&mut self, row_index: usize) -> &mut [u8] {
+        let page_offset = row_index % ROWS_PER_PAGE;
+        let byte_offset = page_offset * ROW_SIZE;
+
+        &mut self.data[byte_offset..byte_offset + ROW_SIZE]
+    }
+
+    pub fn get_slot_ref(&self, row_index: usize) -> &[u8] {
         let page_offset = row_index % ROWS_PER_PAGE;
         let byte_offset = page_offset * ROW_SIZE;
 

@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::storage::constant::ROWS_PER_PAGE;
+use crate::storage::cursor::Cursor;
 use crate::storage::pager::Pager;
 
 pub struct Table {
@@ -15,6 +16,14 @@ impl Table {
             current_rows: pager.get_rows_count(),
             pager,
         })
+    }
+
+    pub fn get_pager(&self) -> &Pager {
+        &self.pager
+    }
+
+    pub fn get_page_mut(&mut self) -> &mut Pager {
+        &mut self.pager
     }
 
     pub fn insert(&mut self, data: &[u8]) {
@@ -41,7 +50,7 @@ impl Table {
         self.pager.flush()
     }
 
-    fn increment_current_row_count(&mut self) {
+    pub fn increment_current_row_count(&mut self) {
         self.current_rows += 1;
     }
 }
