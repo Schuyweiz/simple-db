@@ -10,3 +10,4 @@ anyhow = "1.0.79"
 log = "0.4.20"
 serde = { version = "1.0.194", features = ["derive"] }
 serde_json = { version = "1.0.111", features = [] }
+bincode = "2.0.0-rc.3"
