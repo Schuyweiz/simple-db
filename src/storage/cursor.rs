@@ -1,4 +1,3 @@
-use crate::storage::constant::ROWS_PER_PAGE;
 use crate::storage::row::Row;
 use crate::storage::table::Table;
 
@@ -44,10 +43,10 @@ impl<'a> Cursor<'a> {
         self.cell_num += 1;
         if self.cell_num
             >= self
-                .table
-                .get_page_mut()
-                .get_node_mut(self.page_num)
-                .get_cell_count()
+            .table
+            .get_page_mut()
+            .get_node_mut(self.page_num)
+            .get_cell_count()
         {
             self.end_of_table = true;
         }
@@ -57,7 +56,34 @@ impl<'a> Cursor<'a> {
         self.table.select(self.page_num, self.cell_num)
     }
 
+    //todo: cursor should probably not know about row
     pub fn insert(&mut self, row: &Row) {
         self.table.insert(self.page_num, self.cell_num, row);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_cursor() {
+        let test_db_path = "test.db";
+        let mut table = Table::open_db_connection(test_db_path).unwrap();
+        let row = Row::new(1, "test".to_string(), "test".to_string());
+        table.insert(0, 0, &row);
+        table.flush().unwrap();
+
+        let mut cursor = Cursor::table_start(&mut table);
+        assert_eq!(cursor.get_page_num(), 0);
+        assert_eq!(cursor.is_end_of_table(), false);
+        cursor.advance();
+        assert_eq!(cursor.is_end_of_table(), true);
+
+        let mut cursor = Cursor::table_end(&mut table);
+        assert_eq!(cursor.get_page_num(), 0);
+        assert_eq!(cursor.is_end_of_table(), true);
+        cursor.advance();
+        assert_eq!(cursor.is_end_of_table(), true);
     }
 }

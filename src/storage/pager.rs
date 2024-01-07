@@ -1,8 +1,9 @@
-use crate::storage::constant::{PAGE_SIZE, ROW_SIZE, TABLE_MAX_PAGES};
-use crate::storage::node::Node;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Read, Seek, Write};
+
+use crate::storage::constant::{PAGE_SIZE, TABLE_MAX_PAGES};
+use crate::storage::node::Node;
 
 pub struct Pager {
     file: File,
@@ -20,11 +21,11 @@ impl Pager {
             .unwrap_or_else(|err| panic!("Failed to open file {} {:?}", file_path, err));
 
         let file_len = file.metadata()?.len();
-        let pages_count = (file_len / PAGE_SIZE as u64) as usize;
+        let nodes_count = (file_len / PAGE_SIZE as u64) as usize;
 
         Ok(Self {
             file,
-            nodes_count: pages_count,
+            nodes_count,
             nodes: vec![None; TABLE_MAX_PAGES],
         })
     }
@@ -89,9 +90,11 @@ impl Pager {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::storage::row::Row;
     use std::{fs, panic};
+
+    use crate::storage::row::Row;
+
+    use super::*;
 
     #[test]
     fn test_pager() {

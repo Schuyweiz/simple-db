@@ -1,28 +1,15 @@
-use crate::storage::constant::{ID_SIZE, PAGE_SIZE, ROW_SIZE};
 use std::usize;
 
-const NODE_TYPE_SIZE: usize = std::mem::size_of::<u8>();
-const NODE_TYPE_OFFSET: usize = 0;
+use crate::storage::constant::{ID_SIZE, PAGE_SIZE};
+// unused imports will be kept until the end of the project to know if they are really unused
+use crate::storage::constant::{
+    CELL_SIZE, CELLS_COUNT_OFFSET, CELLS_COUNT_SIZE, IS_ROOT_OFFSET,
+    LEAF_NODE_CELLS_OFFSET, LEAF_NODE_MAX_CELLS,
+    NODE_TYPE_OFFSET, PARENT_PAGE_NUM_OFFSET, PARENT_PAGE_NUM_SIZE
+    ,
+};
 
-const IS_ROOT_SIZE: usize = std::mem::size_of::<u8>();
-const IS_ROOT_OFFSET: usize = NODE_TYPE_OFFSET + NODE_TYPE_SIZE;
-
-const PARENT_PAGE_NUM_SIZE: usize = std::mem::size_of::<usize>();
-const PARENT_PAGE_NUM_OFFSET: usize = IS_ROOT_OFFSET + IS_ROOT_SIZE;
-
-const SPACE_FOR_COMMON_HEADER: usize = NODE_TYPE_SIZE + IS_ROOT_SIZE + PARENT_PAGE_NUM_SIZE;
-
-const CELLS_COUNT_SIZE: usize = std::mem::size_of::<usize>();
-const CELLS_COUNT_OFFSET: usize = SPACE_FOR_COMMON_HEADER;
-const LEAF_NODE_HEADER_SIZE: usize = CELLS_COUNT_SIZE;
-
-const LEAF_NODE_CELLS_SPACE: usize = PAGE_SIZE - SPACE_FOR_COMMON_HEADER - LEAF_NODE_HEADER_SIZE;
-const LEAF_NODE_CELLS_OFFSET: usize = SPACE_FOR_COMMON_HEADER + LEAF_NODE_HEADER_SIZE;
-
-const LEAF_NODE_MAX_CELLS: usize = LEAF_NODE_CELLS_SPACE / std::mem::size_of::<Cell>();
-
-const CELL_SIZE: usize = ID_SIZE + ROW_SIZE;
-
+// replaced Page from previous implementation. Page structure will be restored later on if deemed necessary
 #[derive(Clone)]
 pub struct Node {
     // meta, common
@@ -32,7 +19,7 @@ pub struct Node {
     parent_page_num: usize,
 
     //meta leaf node
-    //need to be here for manual deserialization without bajillion of rows with 0 values
+    //need to be here for manual deserialization without billion of rows with 0 values
     cells_count: usize,
     cells: Vec<Cell>,
 }
@@ -52,6 +39,9 @@ impl Node {
         if self.cells_count >= LEAF_NODE_MAX_CELLS {
             panic!("Trying to insert cell into a full leaf node");
         }
+
+        // i really dont like this, but file deser requires cells_count to work
+        // need a better way to serialzie cells to solve this one.
         self.cells.push(cell);
         self.cells_count += 1;
     }
@@ -140,7 +130,7 @@ impl Node {
 }
 
 #[derive(Clone)]
-struct Cell([u8; CELL_SIZE]);
+pub(crate) struct Cell([u8; CELL_SIZE]);
 
 #[derive(Debug, PartialEq, Clone)]
 enum NodeType {

@@ -25,7 +25,7 @@ impl Table {
                 &row.serialize().unwrap(),
                 page_num,
             )
-            .expect("TODO: panic message");
+            .expect("Insert failed.");
     }
 
     pub fn select(&mut self, page_num: usize, cell_num: usize) -> &[u8] {
