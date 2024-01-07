@@ -1,13 +1,13 @@
 use crate::storage::constant::{PAGE_SIZE, ROW_SIZE, TABLE_MAX_PAGES};
-use crate::storage::page::Page;
+use crate::storage::node::Node;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Read, Seek, Write};
 
 pub struct Pager {
     file: File,
-    rows_count: usize,
-    pages: Vec<Option<Page>>,
+    nodes_count: usize,
+    nodes: Vec<Option<Node>>,
 }
 
 impl Pager {
@@ -19,37 +19,53 @@ impl Pager {
             .open(file_path)
             .unwrap_or_else(|err| panic!("Failed to open file {} {:?}", file_path, err));
 
-        let valid_rows = Self::calculate_valid_rows(&mut file)?;
+        let file_len = file.metadata()?.len();
+        let pages_count = (file_len / PAGE_SIZE as u64) as usize;
 
         Ok(Self {
             file,
-            rows_count: valid_rows,
-            pages: vec![None; TABLE_MAX_PAGES],
+            nodes_count: pages_count,
+            nodes: vec![None; TABLE_MAX_PAGES],
         })
     }
 
-    pub fn get_page_mut(&mut self, page_num: usize) -> &mut Page {
-        if self.pages[page_num].is_none() {
+    pub fn get_page_count(&self) -> usize {
+        self.nodes_count
+    }
+
+    pub fn insert(&mut self, key: &[u8], value: &[u8], page_num: usize) -> anyhow::Result<()> {
+        let mut node = self.get_node_mut(page_num);
+        node.insert_key_value(key, value);
+        Ok(())
+    }
+
+    pub fn select(&mut self, page_num: usize, cell_num: usize) -> &[u8] {
+        let node = self.get_node_mut(page_num);
+        node.get_value(cell_num)
+    }
+
+    pub fn get_node_mut(&mut self, page_num: usize) -> &mut Node {
+        if self.nodes[page_num].is_none() {
             //cache miss
             Self::load_page_from_file(self, page_num);
         }
 
-        self.pages[page_num].as_mut().unwrap()
+        self.nodes[page_num].as_mut().unwrap()
     }
 
     pub fn flush(&mut self) -> anyhow::Result<()> {
-        for i in 0..self.pages.len() {
-            let page = self.pages[i];
+        for i in 0..self.nodes.len() {
+            let node = self.nodes[i].take();
 
-            match page {
+            match node {
                 None => {
                     continue;
                 }
-                Some(page) => {
+                Some(node) => {
                     self.file
                         .seek(io::SeekFrom::Start((i * PAGE_SIZE) as u64))
                         .unwrap();
-                    self.file.write(page.get_page_data()).unwrap();
+                    self.file.write(&node.serialize()).unwrap();
                     self.file.flush().unwrap();
                 }
             }
@@ -58,45 +74,49 @@ impl Pager {
         Ok(())
     }
 
-    pub fn get_rows_count(&self) -> usize {
-        self.rows_count
-    }
-
     fn load_page_from_file(&mut self, page_num: usize) {
-        if page_num <= self.rows_count {
+        if page_num <= self.nodes_count {
             self.file
                 .seek(io::SeekFrom::Start((page_num * PAGE_SIZE) as u64))
                 .unwrap();
             let mut buffer = vec![0; PAGE_SIZE];
             self.file.read(&mut buffer).unwrap();
-            self.pages[page_num] = Some(Page::deserialize(&buffer));
+            self.nodes[page_num] = Some(Node::deserialize(&buffer));
+            self.nodes_count += 1;
         }
     }
+}
 
-    fn calculate_valid_rows(file: &mut File) -> io::Result<usize> {
-        let mut valid_rows = 0;
-        let mut buffer = [0u8; PAGE_SIZE];
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::storage::row::Row;
+    use std::{fs, panic};
 
-        loop {
-            match file.read(&mut buffer) {
-                Ok(0) => break, // End of file
-                Ok(bytes_read) => {
-                    // Calculate the number of complete rows in the read buffer
-                    let num_rows = bytes_read / ROW_SIZE;
+    #[test]
+    fn test_pager() {
+        let test_db_path = "test.db";
 
-                    // Process each row in the page
-                    for i in 0..num_rows {
-                        let row_start = i * ROW_SIZE;
-                        let row = &buffer[row_start..row_start + ROW_SIZE];
-                        if row.iter().any(|&byte| byte != 0) {
-                            valid_rows += 1;
-                        }
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
+        let result = panic::catch_unwind(|| {
+            let mut pager = Pager::new(test_db_path).unwrap();
+            let mut node = pager.get_node_mut(0);
+            let row = Row::new(1, "hello world".to_string(), "hello world".to_string());
+            node.insert_key_value(
+                row.get_id().to_le_bytes().as_mut(),
+                &row.serialize().unwrap(),
+            );
 
-        Ok(valid_rows)
+            pager.flush().unwrap();
+            let mut pager = Pager::new(test_db_path).unwrap();
+            let node = pager.get_node_mut(0);
+            let row = Row::deserialize(node.get_value(0)).unwrap();
+            assert_eq!(row.get_id(), 1);
+            assert_eq!(row.get_user_name(), "hello world");
+
+            fs::remove_file(test_db_path).expect("Failed to remove test database file");
+        });
+
+        // Re-panic if the test failed
+        assert!(result.is_ok());
     }
 }

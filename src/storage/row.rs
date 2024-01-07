@@ -19,6 +19,18 @@ impl Row {
         }
     }
 
+    pub fn get_id(&self) -> u32 {
+        self.id
+    }
+
+    pub fn get_email(&self) -> &str {
+        &self.email
+    }
+
+    pub fn get_user_name(&self) -> &str {
+        &self.user_name
+    }
+
     //todo: custom serializer and deserializer are a pain for the time being, so using this hack for now
     pub fn serialize(&self) -> Result<Vec<u8>> {
         serde_json::to_vec(self)

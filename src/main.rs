@@ -50,15 +50,13 @@ fn main() {
 fn execute_select(table: &mut Table) {
     let mut cursor = Cursor::table_start(table);
     while !cursor.is_end_of_table() {
-        let row_bytes = cursor.cursor_value();
-        println!("{:?}", Row::deserialize(row_bytes));
+        let row = Row::deserialize(cursor.select()).unwrap();
+        println!("{:?}", row);
         cursor.advance();
     }
 }
 
 fn execute_insert(table: &mut Table, row: Row) {
     let mut cursor = Cursor::table_end(table);
-    let target_bytes = cursor.cursor_value();
-    target_bytes.copy_from_slice(&row.serialize().unwrap());
-    table.increment_current_row_count()
+    cursor.insert(&row)
 }
