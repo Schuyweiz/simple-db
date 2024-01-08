@@ -27,11 +27,12 @@ impl CliParser {
     }
 
     pub fn parse_file_path(&self) -> String {
-        let args: Vec<String> = std::env::args().collect();
-        if args.len() < 2 {
-            panic!("Please provide a database file path");
-        }
-
-        args[1].clone()
+        // let args: Vec<String> = std::env::args().collect();
+        // if args.len() < 2 {
+        //     panic!("Please provide a database file path");
+        // }
+        //
+        // args[1].clone()
+        "test.db".to_string()
     }
 }

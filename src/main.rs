@@ -57,6 +57,8 @@ fn execute_select(table: &mut Table) {
 }
 
 fn execute_insert(table: &mut Table, row: Row) {
-    let mut cursor = Cursor::table_end(table);
+    let mut cursor = Cursor::table_find(table, row.get_id() as usize);
     cursor.insert(&row)
 }
+
+//todo: usize should be dealt with in a better way

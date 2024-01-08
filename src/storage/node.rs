@@ -10,7 +10,7 @@ use crate::storage::constant::{
 };
 
 // replaced Page from previous implementation. Page structure will be restored later on if deemed necessary
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Node {
     // meta, common
     //todo: should be a separate struct perhaps?
@@ -35,22 +35,26 @@ impl Node {
         }
     }
 
-    fn insert_cell(&mut self, cell: Cell) {
+    fn insert_cell(&mut self, cell: Cell, cell_num: usize) {
         if self.cells_count >= LEAF_NODE_MAX_CELLS {
             panic!("Trying to insert cell into a full leaf node");
         }
 
         // i really dont like this, but file deser requires cells_count to work
         // need a better way to serialzie cells to solve this one.
-        self.cells.push(cell);
+        self.cells.insert(cell_num, cell);
         self.cells_count += 1;
     }
 
-    pub fn insert_key_value(&mut self, key: &[u8], value: &[u8]) {
+    pub fn insert_key_value(&mut self, key: &[u8], value: &[u8], cell_num: usize) {
         let mut cell = [0; CELL_SIZE];
         cell[..ID_SIZE].copy_from_slice(key);
         cell[ID_SIZE..].copy_from_slice(value);
-        self.insert_cell(Cell(cell));
+        self.insert_cell(Cell(cell), cell_num);
+    }
+
+    pub fn get_node_type(&self) -> NodeType {
+        self.node_type.clone()
     }
 
     pub fn get_cell_count(&self) -> usize {
@@ -67,6 +71,11 @@ impl Node {
 
     pub fn get_value(&self, cell_index: usize) -> &[u8] {
         &self.cells[cell_index].0[ID_SIZE..]
+    }
+
+    pub fn get_key(&self, cell_index: usize) -> usize {
+        let key_bytes = &self.cells[cell_index].0[..ID_SIZE];
+        usize::from_le_bytes(key_bytes.try_into().unwrap())
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -129,56 +138,56 @@ impl Node {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct Cell([u8; CELL_SIZE]);
 
 #[derive(Debug, PartialEq, Clone)]
-enum NodeType {
+pub enum NodeType {
     Leaf,
     Internal,
 }
 
 #[cfg(test)]
 mod test {
+    use crate::storage::row::Row;
     use super::*;
 
     #[test]
-    fn create_leaf_node() {
-        let node = Node::new_leaf();
-        assert_eq!(node.node_type, NodeType::Leaf);
-        assert_eq!(node.is_root, false);
-        assert_eq!(node.parent_page_num, 0);
-        assert_eq!(node.cells.len(), 0);
+    fn test_node() {
+        let mut node = Node::new_leaf();
+        let key: usize = 1;
+        let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
+        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        let serialized = node.serialize();
+        let deserialized = Node::deserialize(&serialized);
+        assert_eq!(deserialized.node_type, NodeType::Leaf);
+        assert_eq!(deserialized.is_root, false);
+        assert_eq!(deserialized.parent_page_num, 0);
+        assert_eq!(deserialized.cells_count, 1);
     }
 
     #[test]
-    fn serialize_deserialize_leaf_node() {
+    fn test_node_insert() {
         let mut node = Node::new_leaf();
-        let cell = Cell([1; CELL_SIZE]);
-        node.insert_cell(cell);
-        let bytes = node.serialize();
-        let deserialized_node = Node::deserialize(&bytes);
-        assert_eq!(deserialized_node.node_type, NodeType::Leaf);
-        assert_eq!(deserialized_node.is_root, false);
-        assert_eq!(deserialized_node.parent_page_num, 0);
-        assert_eq!(deserialized_node.cells.len(), 1);
-        assert_eq!(deserialized_node.cells[0].0, [1; CELL_SIZE]);
+        let key: usize = 1;
+        let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
+        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        assert_eq!(node.get_cell_count(), 1);
+        assert_eq!(node.get_key(0), key);
+        assert_eq!(node.get_value(0), value);
     }
 
     #[test]
-    fn serialize_deserialize_leaf_node_with_multiple_cells() {
+    fn test_node_deserialize() {
         let mut node = Node::new_leaf();
-        let cell = Cell([1; CELL_SIZE]);
-        node.insert_cell(cell);
-        let cell = Cell([2; CELL_SIZE]);
-        node.insert_cell(cell);
-        let bytes = node.serialize();
-        let deserialized_node = Node::deserialize(&bytes);
-        assert_eq!(deserialized_node.node_type, NodeType::Leaf);
-        assert_eq!(deserialized_node.is_root, false);
-        assert_eq!(deserialized_node.parent_page_num, 0);
-        assert_eq!(deserialized_node.cells.len(), 2);
-        assert_eq!(deserialized_node.cells[0].0, [1; CELL_SIZE]);
-        assert_eq!(deserialized_node.cells[1].0, [2; CELL_SIZE]);
+        let key: usize = 1;
+        let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
+        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        let serialized = node.serialize();
+        let deserialized = Node::deserialize(&serialized);
+        assert_eq!(deserialized.node_type, NodeType::Leaf);
+        assert_eq!(deserialized.is_root, false);
+        assert_eq!(deserialized.parent_page_num, 0);
+        assert_eq!(deserialized.cells_count, 1);
     }
 }

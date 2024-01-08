@@ -18,12 +18,22 @@ impl Table {
         })
     }
 
+    // should probably have a better solutuin instead of a dangling argument in a function
     pub fn insert(&mut self, page_num: usize, cell_num: usize, row: &Row) {
+        let row_id = row.get_id() as usize;
+        if self.pager.get_node_mut(page_num).get_cell_count() > cell_num {
+            let target_key = self.pager.get_key(page_num, cell_num);
+            if target_key == row_id {
+                panic!("Duplicate key.")
+            }
+        }
+
         self.pager
             .insert(
-                cell_num.to_le_bytes().as_slice(),
+                row_id.to_le_bytes().as_slice(),
                 &row.serialize().unwrap(),
                 page_num,
+                cell_num,
             )
             .expect("Insert failed.");
     }
@@ -32,7 +42,7 @@ impl Table {
         self.pager.select(page_num, cell_num)
     }
 
-    pub fn get_page_mut(&mut self) -> &mut Pager {
+    pub fn get_pager_mut(&mut self) -> &mut Pager {
         &mut self.pager
     }
 
@@ -62,6 +72,48 @@ mod test {
         let mut table = Table::open_db_connection(test_db_path).unwrap();
         let row = Row::deserialize(table.select(0, 0)).unwrap();
         assert_eq!(row.get_id(), 1);
+        assert_eq!(row.get_user_name(), "test");
+        assert_eq!(row.get_email(), "test");
+
+        fs::remove_file(test_db_path).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_table_duplicate_key() {
+        let test_db_path = "test.db";
+        let mut table = Table::open_db_connection(test_db_path).unwrap();
+        let row = Row::new(1, "test".to_string(), "test".to_string());
+        table.insert(0, 0, &row);
+        table.insert(0, 0, &row);
+        table.flush().unwrap();
+
+        fs::remove_file(test_db_path).unwrap();
+    }
+
+    #[test]
+    fn test_insert_multiple_rows() {
+        let test_db_path = "test.db";
+        let mut table = Table::open_db_connection(test_db_path).unwrap();
+        let row = Row::new(1, "test".to_string(), "test".to_string());
+        table.insert(0, 0, &row);
+        let row = Row::new(2, "test".to_string(), "test".to_string());
+        table.insert(0, 1, &row);
+        let row = Row::new(3, "test".to_string(), "test".to_string());
+        table.insert(0, 2, &row);
+        table.flush().unwrap();
+
+        let mut table = Table::open_db_connection(test_db_path).unwrap();
+        let row = Row::deserialize(table.select(0, 0)).unwrap();
+        assert_eq!(row.get_id(), 1);
+        assert_eq!(row.get_user_name(), "test");
+        assert_eq!(row.get_email(), "test");
+        let row = Row::deserialize(table.select(0, 1)).unwrap();
+        assert_eq!(row.get_id(), 2);
+        assert_eq!(row.get_user_name(), "test");
+        assert_eq!(row.get_email(), "test");
+        let row = Row::deserialize(table.select(0, 2)).unwrap();
+        assert_eq!(row.get_id(), 3);
         assert_eq!(row.get_user_name(), "test");
         assert_eq!(row.get_email(), "test");
 

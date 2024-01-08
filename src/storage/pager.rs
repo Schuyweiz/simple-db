@@ -34,15 +34,20 @@ impl Pager {
         self.nodes_count
     }
 
-    pub fn insert(&mut self, key: &[u8], value: &[u8], page_num: usize) -> anyhow::Result<()> {
+    pub fn insert(&mut self, key: &[u8], value: &[u8], page_num: usize, cell_num: usize) -> anyhow::Result<()> {
         let mut node = self.get_node_mut(page_num);
-        node.insert_key_value(key, value);
+        node.insert_key_value(key, value, cell_num);
         Ok(())
     }
 
     pub fn select(&mut self, page_num: usize, cell_num: usize) -> &[u8] {
         let node = self.get_node_mut(page_num);
         node.get_value(cell_num)
+    }
+
+    pub fn get_key(&mut self, page_num: usize, cell_num: usize) -> usize {
+        let node = self.get_node_mut(page_num);
+        node.get_key(cell_num)
     }
 
     pub fn get_node_mut(&mut self, page_num: usize) -> &mut Node {
@@ -104,10 +109,7 @@ mod test {
             let mut pager = Pager::new(test_db_path).unwrap();
             let mut node = pager.get_node_mut(0);
             let row = Row::new(1, "hello world".to_string(), "hello world".to_string());
-            node.insert_key_value(
-                row.get_id().to_le_bytes().as_mut(),
-                &row.serialize().unwrap(),
-            );
+            node.insert_key_value(&row.get_id().to_le_bytes(), &row.serialize().unwrap(), 0);
 
             pager.flush().unwrap();
             let mut pager = Pager::new(test_db_path).unwrap();
