@@ -39,9 +39,40 @@ impl<'a> Cursor<'a> {
         if root_node_type == NodeType::Leaf {
             return Cursor::leaf_node_find(table, root_page_num, key);
         } else {
-            // placeholder for internal leaf
-            panic!("Unimplemented");
+            return Cursor::internal_node_find(table, root_page_num, key);
         }
+    }
+
+    fn internal_node_find(table: &'a mut Table, page_num: usize, key: usize) -> Cursor {
+        let node = table.get_pager_mut().get_node_mut(page_num);
+        let keys_num = node.get_key_count();
+
+        let mut min_index = 0;
+        let mut max_index = keys_num;
+
+        while min_index != max_index {
+            let index = (min_index + max_index) / 2;
+            let key_at_index = node.internal_get_key(index);
+
+            if key_at_index >= key {
+                max_index = index;
+            } else {
+                min_index = index + 1;
+            }
+        }
+
+        let child_page_num = node.internal_node_children(min_index);
+        let child_node = table.get_pager_mut().get_node_mut(child_page_num);
+        let child_node_type = child_node.get_node_type();
+
+        return match child_node_type {
+            NodeType::Leaf => {
+                Cursor::leaf_node_find(table, child_page_num, key)
+            }
+            NodeType::Internal => {
+                Cursor::internal_node_find(table, child_page_num, key)
+            }
+        };
     }
 
     fn leaf_node_find(table: &'a mut Table, page_num: usize, key: usize) -> Cursor {

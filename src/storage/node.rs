@@ -1,5 +1,4 @@
 use std::usize;
-use serde_json::Value;
 
 use crate::storage::constant::{ID_SIZE, INTERNAL_CELL_SIZE, INTERNAL_NODE_MAX_CELLS, KEY_VALUE_OFFSET, KEY_VALUE_SIZE, PAGE_NUM_SIZE, PAGE_SIZE, RIGHT_CHILD_OFFSET};
 // unused imports will be kept until the end of the project to know if they are really unused
@@ -59,6 +58,16 @@ impl Node {
         }
     }
 
+    pub fn internal_node_children(&self, cell_num: usize) -> usize {
+        if cell_num > self.keys_count {
+            panic!("Tried to access child_num {} > keys_count {}", cell_num, self.keys_count);
+        } else if cell_num == self.keys_count {
+            return self.right_child_key;
+        } else {
+            return self.get_key(cell_num);
+        }
+    }
+
     pub fn insert_cell(&mut self, cell: Cell, cell_num: usize) {
         if self.cells_count >= LEAF_NODE_MAX_CELLS {
             panic!("Trying to insert cell into a full leaf node");
@@ -87,6 +96,10 @@ impl Node {
 
     pub fn get_cell_count(&self) -> usize {
         self.cells_count
+    }
+
+    pub fn get_key_count(&self) -> usize {
+        self.keys_count
     }
 
     pub fn set_parent_page_num(&mut self, parent_page_num: usize) {
@@ -132,6 +145,16 @@ impl Node {
 
     pub fn get_key(&self, cell_index: usize) -> usize {
         let key_bytes = &self.cells[cell_index].0[..ID_SIZE];
+        usize::from_le_bytes(key_bytes.try_into().unwrap())
+    }
+
+    pub fn internal_get_key(&self, cell_index: usize) -> usize {
+        let key_bytes = &self.keys[cell_index].0[..ID_SIZE];
+        usize::from_le_bytes(key_bytes.try_into().unwrap())
+    }
+
+    pub fn get_internal_key(&self, cell_index: usize) -> usize {
+        let key_bytes = &self.keys[cell_index].0[..ID_SIZE];
         usize::from_le_bytes(key_bytes.try_into().unwrap())
     }
 
@@ -265,6 +288,7 @@ pub enum NodeType {
 #[cfg(test)]
 mod test {
     use crate::storage::row::Row;
+
     use super::*;
 
     #[test]
