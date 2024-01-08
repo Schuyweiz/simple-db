@@ -1,6 +1,7 @@
 use std::usize;
+use serde_json::Value;
 
-use crate::storage::constant::{ID_SIZE, PAGE_SIZE};
+use crate::storage::constant::{ID_SIZE, INTERNAL_CELL_SIZE, INTERNAL_NODE_MAX_CELLS, KEY_VALUE_OFFSET, KEY_VALUE_SIZE, PAGE_NUM_SIZE, PAGE_SIZE, RIGHT_CHILD_OFFSET};
 // unused imports will be kept until the end of the project to know if they are really unused
 use crate::storage::constant::{
     CELL_SIZE, CELLS_COUNT_OFFSET, CELLS_COUNT_SIZE, IS_ROOT_OFFSET,
@@ -22,6 +23,11 @@ pub struct Node {
     //need to be here for manual deserialization without billion of rows with 0 values
     cells_count: usize,
     cells: Vec<Cell>,
+
+    //meta internal node
+    keys_count: usize,
+    keys: Vec<InternalCell>,
+    right_child_key: usize,
 }
 
 impl Node {
@@ -32,10 +38,28 @@ impl Node {
             parent_page_num: 0,
             cells_count: 0,
             cells: Vec::new(),
+
+            keys_count: 0,
+            keys: Vec::new(),
+            right_child_key: 0,
         }
     }
 
-    fn insert_cell(&mut self, cell: Cell, cell_num: usize) {
+    pub fn new_internal() -> Node {
+        Node {
+            node_type: NodeType::Internal,
+            is_root: false,
+            parent_page_num: 0,
+            cells_count: 0,
+            cells: Vec::new(),
+
+            keys_count: 0,
+            keys: Vec::new(),
+            right_child_key: 0,
+        }
+    }
+
+    pub fn insert_cell(&mut self, cell: Cell, cell_num: usize) {
         if self.cells_count >= LEAF_NODE_MAX_CELLS {
             panic!("Trying to insert cell into a full leaf node");
         }
@@ -53,6 +77,10 @@ impl Node {
         self.insert_cell(Cell(cell), cell_num);
     }
 
+    pub fn is_parent_node(&self) -> bool {
+        self.node_type == NodeType::Internal
+    }
+
     pub fn get_node_type(&self) -> NodeType {
         self.node_type.clone()
     }
@@ -61,12 +89,41 @@ impl Node {
         self.cells_count
     }
 
+    pub fn set_parent_page_num(&mut self, parent_page_num: usize) {
+        self.parent_page_num = parent_page_num;
+    }
+
+    pub fn set_is_root(&mut self, is_root: bool) {
+        self.is_root = is_root;
+    }
+
+    pub fn set_right_child_key(&mut self, right_child_key: usize) {
+        self.right_child_key = right_child_key;
+    }
+
+    pub fn internal_node_insert(&mut self, key: &[u8], value: &[u8]) {
+        if self.keys_count >= INTERNAL_NODE_MAX_CELLS {
+            panic!("Trying to insert cell into a full leaf node");
+        }
+
+        let mut cell = [0; INTERNAL_CELL_SIZE];
+        cell[..ID_SIZE].copy_from_slice(key);
+        cell[ID_SIZE..].copy_from_slice(value);
+        self.keys.insert(self.keys_count, InternalCell(cell));
+        self.keys_count += 1;
+    }
+
     pub fn get_parent_page_num(&self) -> usize {
         self.parent_page_num
     }
 
     pub fn get_mut_cell(&mut self, cell_index: usize) -> &mut Cell {
         &mut self.cells[cell_index]
+    }
+
+    pub fn remove_cell(&mut self, cell_index: usize) {
+        self.cells.remove(cell_index);
+        self.cells_count -= 1;
     }
 
     pub fn get_value(&self, cell_index: usize) -> &[u8] {
@@ -106,6 +163,58 @@ impl Node {
             1 => NodeType::Internal,
             _ => panic!("Unknown node type {}", bytes[NODE_TYPE_OFFSET]),
         };
+        return match node_type {
+            NodeType::Leaf => {
+                Node::deserialize_leaf_node(bytes)
+            }
+            NodeType::Internal => {
+                Node::deserialize_internal_node(bytes)
+            }
+        };
+    }
+
+    fn deserialize_internal_node(bytes: &[u8]) -> Node {
+        let is_root = bytes[IS_ROOT_OFFSET] == 1;
+        let parent_page_num = usize::from_le_bytes(
+            bytes[PARENT_PAGE_NUM_OFFSET..PARENT_PAGE_NUM_OFFSET + PARENT_PAGE_NUM_SIZE]
+                .try_into()
+                .unwrap(),
+        );
+
+        let keys_count = usize::from_le_bytes(
+            bytes[CELLS_COUNT_OFFSET..CELLS_COUNT_OFFSET + CELLS_COUNT_SIZE]
+                .try_into()
+                .unwrap(),
+        );
+
+        let mut keys = Vec::new();
+        let mut keys_offset = KEY_VALUE_OFFSET;
+        for _ in 0..keys_count {
+            let mut key = [0; KEY_VALUE_SIZE];
+            key.copy_from_slice(&bytes[keys_offset..keys_offset + INTERNAL_CELL_SIZE]);
+            keys.push(InternalCell(key));
+            keys_offset += INTERNAL_CELL_SIZE;
+        }
+
+        let right_child_key = usize::from_le_bytes(
+            bytes[RIGHT_CHILD_OFFSET..RIGHT_CHILD_OFFSET + PAGE_NUM_SIZE]
+                .try_into()
+                .unwrap(),
+        );
+
+        Node {
+            node_type: NodeType::Internal,
+            is_root,
+            parent_page_num,
+            cells: Vec::new(),
+            cells_count: 0,
+            keys,
+            keys_count,
+            right_child_key,
+        }
+    }
+
+    fn deserialize_leaf_node(bytes: &[u8]) -> Node {
         let is_root = bytes[IS_ROOT_OFFSET] == 1;
         let parent_page_num = usize::from_le_bytes(
             bytes[PARENT_PAGE_NUM_OFFSET..PARENT_PAGE_NUM_OFFSET + PARENT_PAGE_NUM_SIZE]
@@ -129,17 +238,23 @@ impl Node {
         }
 
         Node {
-            node_type,
+            node_type: NodeType::Leaf,
             is_root,
             parent_page_num,
             cells,
             cells_count,
+            keys_count: 0,
+            keys: Vec::new(),
+            right_child_key: 0,
         }
     }
 }
 
 #[derive(Clone, PartialEq)]
 pub(crate) struct Cell([u8; CELL_SIZE]);
+
+#[derive(Clone, PartialEq)]
+pub struct InternalCell([u8; INTERNAL_CELL_SIZE]);
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum NodeType {
@@ -189,5 +304,19 @@ mod test {
         assert_eq!(deserialized.is_root, false);
         assert_eq!(deserialized.parent_page_num, 0);
         assert_eq!(deserialized.cells_count, 1);
+    }
+
+    #[test]
+    fn test_node_internal() {
+        let mut node = Node::new_internal();
+        let key: usize = 1;
+        let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
+        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        let serialized = node.serialize();
+        let deserialized = Node::deserialize(&serialized);
+        assert_eq!(deserialized.node_type, NodeType::Internal);
+        assert_eq!(deserialized.is_root, false);
+        assert_eq!(deserialized.parent_page_num, 0);
+        assert_eq!(deserialized.keys_count, 1);
     }
 }

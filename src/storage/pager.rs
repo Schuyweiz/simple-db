@@ -2,7 +2,7 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Read, Seek, Write};
 
-use crate::storage::constant::{PAGE_SIZE, TABLE_MAX_PAGES};
+use crate::storage::constant::{LEAF_NODE_MAX_CELLS, PAGE_SIZE, TABLE_MAX_PAGES};
 use crate::storage::node::Node;
 
 pub struct Pager {
@@ -13,7 +13,7 @@ pub struct Pager {
 
 impl Pager {
     pub fn new(file_path: &str) -> anyhow::Result<Self> {
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -30,14 +30,96 @@ impl Pager {
         })
     }
 
+    pub fn get_empty_page_num(&mut self) -> usize {
+        // we do not free old pages yet, so this is always the next page
+        self.nodes_count
+    }
+
     pub fn get_page_count(&self) -> usize {
         self.nodes_count
     }
 
+    //todo: get rid of the page notation if possible, seems to have no use here
     pub fn insert(&mut self, key: &[u8], value: &[u8], page_num: usize, cell_num: usize) -> anyhow::Result<()> {
-        let mut node = self.get_node_mut(page_num);
-        node.insert_key_value(key, value, cell_num);
+        let current_node = self.get_node_mut(page_num);
+        let current_node_cell_count = current_node.get_cell_count();
+        if LEAF_NODE_MAX_CELLS <= current_node_cell_count {
+            let node_parent_page_num = current_node.get_parent_page_num();
+            let right_child_page_num = self.leaf_node_split_and_insert(page_num, cell_num, key, value);
+            //root page is the page itself
+            if node_parent_page_num == page_num {
+                Self::create_new_root_node(self, page_num, right_child_page_num);
+            }
+            return Ok(());
+        }
+
+        current_node.insert_key_value(key, value, cell_num);
         Ok(())
+    }
+
+    fn create_new_root_node(&mut self, root_page_num: usize, right_child_page_num: usize) {
+        let root_node_cell_count;
+        let last_key;
+        let mut left_child_node = Node::new_leaf();
+
+        {
+            let root_node = self.get_node_mut(root_page_num);
+            root_node_cell_count = root_node.get_cell_count();
+            for cell_id in 0..root_node_cell_count {
+                left_child_node.insert_cell(root_node.get_mut_cell(cell_id).clone(), cell_id);
+            }
+            last_key = root_node.get_key(root_node_cell_count - 1).to_le_bytes();
+        }
+
+        left_child_node.set_parent_page_num(root_page_num);
+
+        let mut new_root_node = Node::new_internal();
+        new_root_node.set_parent_page_num(root_page_num);
+
+        Self::set_node(self, left_child_node, self.nodes_count);
+
+        new_root_node.set_is_root(true);
+        new_root_node.set_right_child_key(right_child_page_num);
+        new_root_node.internal_node_insert(
+            &last_key.as_slice(),
+            &self.nodes_count.to_le_bytes().as_slice(),
+        );
+
+        self.nodes_count += 1;
+        self.nodes[root_page_num] = Some(new_root_node);
+    }
+
+    fn set_node(&mut self, node: Node, page_num: usize) {
+        self.nodes[page_num] = Some(node);
+    }
+
+    // returning usize which is the new page num, but looks like a temp hack to me
+    fn leaf_node_split_and_insert(&mut self, page_num: usize, cell_num: usize, key: &[u8], value: &[u8]) -> usize {
+        let mut new_node = Node::new_leaf();
+        let mut old_node = self.get_node_mut(page_num);
+        new_node.set_parent_page_num(page_num);
+
+        let old_node_new_max = old_node.get_cell_count() / 2;
+
+        while old_node_new_max != old_node.get_cell_count() {
+            let cell_copy = old_node.get_mut_cell(old_node_new_max).clone();
+            new_node.insert_cell(cell_copy, 0);
+
+            old_node.remove_cell(old_node_new_max);
+        }
+
+
+        if cell_num < old_node_new_max {
+            old_node.insert_key_value(key, value, cell_num);
+        } else {
+            new_node.insert_key_value(key, value, cell_num - old_node_new_max);
+        }
+
+        self.nodes[self.nodes_count] = Some(new_node);
+        self.nodes_count += 1;
+
+        let new_page_num = self.nodes_count - 1;
+        new_page_num
     }
 
     pub fn select(&mut self, page_num: usize, cell_num: usize) -> &[u8] {
@@ -123,5 +205,20 @@ mod test {
 
         // Re-panic if the test failed
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_node_split() {
+        let test_db_path = "test.db";
+
+        let mut pager = Pager::new(test_db_path).unwrap();
+        let row = Row::new(1, "hello world".to_string(), "hello world".to_string());
+        pager.insert(&(row.get_id() as usize).to_le_bytes(), &row.serialize().unwrap(), 0, 0).unwrap();
+        let row = Row::new(2, "hello world".to_string(), "hello world".to_string());
+        pager.insert(&(row.get_id() as usize).to_le_bytes(), &row.serialize().unwrap(), 0, 1).unwrap();
+        let row = Row::new(3, "hello world".to_string(), "hello world".to_string());
+        pager.insert(&(row.get_id() as usize).to_le_bytes(), &row.serialize().unwrap(), 0, 2).unwrap();
+        let row = Row::new(4, "hello world".to_string(), "hello world".to_string());
+        pager.insert(&(row.get_id() as usize).to_le_bytes(), &row.serialize().unwrap(), 0, 3).unwrap();
     }
 }
