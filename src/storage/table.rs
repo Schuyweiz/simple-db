@@ -30,7 +30,7 @@ impl Table {
 
         self.pager
             .insert(
-                row_id.to_le_bytes().as_slice(),
+                row_id,
                 &row.serialize().unwrap(),
                 page_num,
                 cell_num,

@@ -19,12 +19,23 @@ fn main() {
     let meta_cmd_handler = MetaCommandHandler::new();
     let sql_cmd_handler = SqlCommandHandler::new();
 
-    loop {
-        let user_input = cli_parser.parse_input();
+    // Hardcoded array of command strings
+    let commands = [
+        "insert 1 user1 email1",
+        "insert 2 user2 email2",
+        "insert 3 user3 email3",
+        "insert 4 user4 email4",
+        "insert 5 user5 email5",
+        "insert 6 user6 email6",
+        "select",
+    ];
+
+    for command in commands.iter() {
+        let user_input = command.to_string();
 
         let meta_cmd = meta_cmd_handler.handle(&user_input);
-        if meta_cmd.is_some() {
-            match meta_cmd.unwrap() {
+        if let Some(meta_command) = meta_cmd {
+            match meta_command {
                 MetaCommand::Exit => {
                     table.flush().unwrap();
                     break;
@@ -35,17 +46,19 @@ fn main() {
             }
         }
 
-        let sql_cmd = sql_cmd_handler
-            .handle(&user_input)
-            .unwrap_or_else(|error| panic!("Failed to parse command due to {:?}", error));
-
-        match sql_cmd {
-            SqlCommand::Insert(row) => execute_insert(&mut table, row),
-            SqlCommand::Select => execute_select(&mut table),
-            SqlCommand::Unknown => {}
+        match sql_cmd_handler.handle(&user_input) {
+            Ok(sql_cmd) => {
+                match sql_cmd {
+                    SqlCommand::Insert(row) => execute_insert(&mut table, row),
+                    SqlCommand::Select => execute_select(&mut table),
+                    SqlCommand::Unknown => {}
+                }
+            }
+            Err(error) => panic!("Failed to parse command due to {:?}", error),
         }
     }
 }
+
 
 fn execute_select(table: &mut Table) {
     let mut cursor = Cursor::table_find(table, 0);

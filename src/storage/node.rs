@@ -131,11 +131,83 @@ impl Node {
         self.cells_count += 1;
     }
 
-    pub fn insert_key_value(&mut self, key: &[u8], value: &[u8], cell_num: usize) {
+    pub fn insert_key_value(&mut self, key: usize, value: &[u8], cell_num: usize) {
         let mut cell = [0; CELL_SIZE];
-        cell[..ID_SIZE].copy_from_slice(key);
-        cell[ID_SIZE..].copy_from_slice(value);
+        cell[..ID_SIZE].copy_from_slice(&key.to_le_bytes());
+        cell[ID_SIZE..].copy_from_slice(&value);
         self.insert_cell(Cell(cell), cell_num);
+    }
+
+    pub fn leaf_get_index_by_key(&self, key: usize) -> Option<usize> {
+        let mut min_index = 0;
+        let mut max_index = self.cells_count;
+
+        while min_index != max_index {
+            let index = (min_index + max_index) / 2;
+            let key_at_index = self.get_key(index);
+
+            if key_at_index == key {
+                return Some(index);
+            } else if key_at_index < key {
+                min_index = index + 1;
+            } else {
+                max_index = index;
+            }
+        }
+
+        return None;
+    }
+
+    pub fn internal_find_child_index_by_key(&self, key: usize) -> usize {
+        let mut min_index = 0;
+        let mut max_index = self.keys_count;
+
+        while min_index != max_index {
+            let index = (min_index + max_index) / 2;
+            let key_at_index = self.internal_get_key(index);
+
+            if key_at_index == key {
+                return index;
+            } else if key_at_index < key {
+                min_index = index + 1;
+            } else {
+                max_index = index;
+            }
+        }
+
+        return min_index;
+    }
+
+    pub fn update_internal_node_key(&mut self, key: usize, new_key: usize) {
+        let index = Self::internal_find_child_index_by_key(self, key);
+
+        if index < self.keys_count {
+            let mut key = [0; INTERNAL_CELL_SIZE];
+            key[..ID_SIZE].copy_from_slice(&new_key.to_le_bytes());
+            key[ID_SIZE..].copy_from_slice(&self.internal_get_value(index).to_le_bytes());
+            self.keys[index] = InternalCell(key);
+        }
+    }
+
+    fn leaf_get_node_max_key(&self) -> usize {
+        if self.cells_count == 0 {
+            return usize::MAX;
+        }
+        self.get_key(self.cells_count - 1)
+    }
+
+    fn internal_get_node_max_key(&self) -> usize {
+        if self.keys_count == 0 {
+            return usize::MAX;
+        }
+        self.internal_get_key(self.keys_count - 1)
+    }
+
+    pub fn get_node_max_key(&self) -> usize {
+        match self.node_type {
+            NodeType::Leaf => self.leaf_get_node_max_key(),
+            NodeType::Internal => self.internal_get_node_max_key(),
+        }
     }
 
     pub fn is_parent_node(&self) -> bool {
@@ -166,14 +238,26 @@ impl Node {
         self.right_child_key = right_child_key;
     }
 
-    pub fn internal_node_insert(&mut self, key: &[u8], value: &[u8]) {
+    pub fn internal_node_insert_by_index(&mut self, key: usize, value: usize, index: usize) {
         if self.keys_count >= INTERNAL_NODE_MAX_CELLS {
             panic!("Trying to insert cell into a full leaf node");
         }
 
         let mut cell = [0; INTERNAL_CELL_SIZE];
-        cell[..ID_SIZE].copy_from_slice(key);
-        cell[ID_SIZE..].copy_from_slice(value);
+        cell[..ID_SIZE].copy_from_slice(&key.to_le_bytes());
+        cell[ID_SIZE..].copy_from_slice(&value.to_le_bytes());
+        self.keys.insert(index, InternalCell(cell));
+        self.keys_count += 1;
+    }
+
+    pub fn internal_node_insert(&mut self, key: usize, value: usize) {
+        if self.keys_count >= INTERNAL_NODE_MAX_CELLS {
+            panic!("Trying to insert cell into a full leaf node");
+        }
+
+        let mut cell = [0; INTERNAL_CELL_SIZE];
+        cell[..ID_SIZE].copy_from_slice(&key.to_le_bytes());
+        cell[ID_SIZE..].copy_from_slice(&value.to_le_bytes());
         self.keys.insert(self.keys_count, InternalCell(cell));
         self.keys_count += 1;
     }
@@ -355,7 +439,7 @@ mod test {
         let mut node = Node::new_leaf();
         let key: usize = 1;
         let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
-        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        node.insert_key_value(key, &value, 0);
         let serialized = node.serialize();
         let deserialized = Node::deserialize(&serialized);
         assert_eq!(deserialized.node_type, NodeType::Leaf);
@@ -369,7 +453,7 @@ mod test {
         let mut node = Node::new_leaf();
         let key: usize = 1;
         let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
-        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        node.insert_key_value(key, &value, 0);
         assert_eq!(node.get_cell_count(), 1);
         assert_eq!(node.get_key(0), key);
         assert_eq!(node.get_value(0), value);
@@ -380,7 +464,7 @@ mod test {
         let mut node = Node::new_leaf();
         let key: usize = 1;
         let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
-        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        node.insert_key_value(key, &value, 0);
         let serialized = node.serialize();
         let deserialized = Node::deserialize(&serialized);
         assert_eq!(deserialized.node_type, NodeType::Leaf);
@@ -394,7 +478,7 @@ mod test {
         let mut node = Node::new_internal();
         let key: usize = 1;
         let value = Row::new(1, "test".to_string(), "test".to_string()).serialize().unwrap();
-        node.insert_key_value(&key.to_le_bytes(), &value, 0);
+        node.insert_key_value(key, &value, 0);
         let serialized = node.serialize();
         let deserialized = Node::deserialize(&serialized);
         assert_eq!(deserialized.node_type, NodeType::Internal);
