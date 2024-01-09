@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::usize;
 
 use crate::storage::constant::{ID_SIZE, INTERNAL_CELL_SIZE, INTERNAL_NODE_MAX_CELLS, KEY_VALUE_OFFSET, KEY_VALUE_SIZE, PAGE_NUM_SIZE, PAGE_SIZE, RIGHT_CHILD_OFFSET};
@@ -14,22 +15,52 @@ use crate::storage::constant::{
 pub struct Node {
     // meta, common
     //todo: should be a separate struct perhaps?
-    node_type: NodeType,
-    is_root: bool,
-    parent_page_num: usize,
+    pub(crate) node_type: NodeType,
+    pub(crate) is_root: bool,
+    pub(crate) parent_page_num: usize,
 
     //meta leaf node
     //need to be here for manual deserialization without billion of rows with 0 values
-    cells_count: usize,
-    cells: Vec<Cell>,
+    pub(crate) cells_count: usize,
+    pub(crate) cells: Vec<Cell>,
+    pub(crate) next_leaf_num: usize,
 
     //meta internal node
-    keys_count: usize,
-    keys: Vec<InternalCell>,
-    right_child_key: usize,
+    pub(crate) keys_count: usize,
+    pub(crate) keys: Vec<InternalCell>,
+    pub(crate) right_child_key: usize,
+}
+
+impl InternalCell {
+    pub fn get_key(&self) -> usize {
+        let key_bytes = &self.0[..ID_SIZE];
+        usize::from_le_bytes(key_bytes.try_into().unwrap())
+    }
+
+    pub fn get_page_num(&self) -> usize {
+        let page_num_bytes = &self.0[ID_SIZE..];
+        usize::from_le_bytes(page_num_bytes.try_into().unwrap())
+    }
+}
+
+impl Cell {
+    pub fn get_key(&self) -> usize {
+        let key_bytes = &self.0[..ID_SIZE];
+        usize::from_le_bytes(key_bytes.try_into().unwrap())
+    }
+
+    pub fn get_value(&self) -> &[u8] {
+        &self.0[ID_SIZE..]
+    }
 }
 
 impl Node {
+    pub fn print_nodes(&self) {
+        println!("Node type: {:?}", self.node_type);
+        println!("Is root: {:?}", self.is_root);
+        println!("Parent page num: {:?}", self.parent_page_num);
+        println!("Cells count: {:?}", self.cells_count);
+    }
     pub fn new_leaf() -> Node {
         Node {
             node_type: NodeType::Leaf,
@@ -37,6 +68,7 @@ impl Node {
             parent_page_num: 0,
             cells_count: 0,
             cells: Vec::new(),
+            next_leaf_num: 0,
 
             keys_count: 0,
             keys: Vec::new(),
@@ -55,7 +87,16 @@ impl Node {
             keys_count: 0,
             keys: Vec::new(),
             right_child_key: 0,
+            next_leaf_num: 0,
         }
+    }
+
+    pub fn get_next_leaf_num(&self) -> usize {
+        self.next_leaf_num
+    }
+
+    pub fn set_next_leaf_num(&mut self, next_leaf_num: usize) {
+        self.next_leaf_num = next_leaf_num;
     }
 
     pub fn internal_node_children(&self, cell_num: usize) -> usize {
@@ -64,7 +105,7 @@ impl Node {
         } else if cell_num == self.keys_count {
             return self.right_child_key;
         } else {
-            return self.get_key(cell_num);
+            return self.internal_get_value(cell_num);
         }
     }
 
@@ -76,6 +117,17 @@ impl Node {
         // i really dont like this, but file deser requires cells_count to work
         // need a better way to serialzie cells to solve this one.
         self.cells.insert(cell_num, cell);
+        self.cells_count += 1;
+    }
+
+    pub fn push_cell(&mut self, cell: Cell) {
+        if self.cells_count >= LEAF_NODE_MAX_CELLS {
+            panic!("Trying to insert cell into a full leaf node");
+        }
+
+        // i really dont like this, but file deser requires cells_count to work
+        // need a better way to serialzie cells to solve this one.
+        self.cells.push(cell);
         self.cells_count += 1;
     }
 
@@ -150,6 +202,11 @@ impl Node {
 
     pub fn internal_get_key(&self, cell_index: usize) -> usize {
         let key_bytes = &self.keys[cell_index].0[..ID_SIZE];
+        usize::from_le_bytes(key_bytes.try_into().unwrap())
+    }
+
+    pub fn internal_get_value(&self, cell_index: usize) -> usize {
+        let key_bytes = &self.keys[cell_index].0[ID_SIZE..];
         usize::from_le_bytes(key_bytes.try_into().unwrap())
     }
 
@@ -234,6 +291,7 @@ impl Node {
             keys,
             keys_count,
             right_child_key,
+            next_leaf_num: 0,
         }
     }
 
@@ -269,14 +327,15 @@ impl Node {
             keys_count: 0,
             keys: Vec::new(),
             right_child_key: 0,
+            next_leaf_num: 0,
         }
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Cell([u8; CELL_SIZE]);
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct InternalCell([u8; INTERNAL_CELL_SIZE]);
 
 #[derive(Debug, PartialEq, Clone)]

@@ -46,6 +46,10 @@ impl Table {
         &mut self.pager
     }
 
+    pub fn get_pager(&self) -> &Pager {
+        &self.pager
+    }
+
     pub fn get_root_page_num(&self) -> usize {
         self.root_page_num
     }

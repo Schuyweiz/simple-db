@@ -10,14 +10,18 @@ pub struct Cursor<'a> {
 }
 
 impl<'a> Cursor<'a> {
-    pub fn table_start(table: &'a mut Table) -> Cursor {
-        let end_of_table = table.get_pager_mut().get_node_mut(0).get_cell_count() == 0;
-        Cursor {
-            table,
-            page_num: 0,
-            cell_num: 0,
-            end_of_table,
-        }
+
+    pub fn to_table_start(&mut self) -> &mut Cursor<'a> {
+        // Then, get the pager as mutable which is separate from the above operation
+        let page_num = self.get_page_num();
+        let num_cells = {
+            let node =  self.table.get_pager_mut().get_node_mut(page_num);
+            node.get_cell_count()
+        };
+
+        // Use the num_cells value to update the cursor
+        self.end_of_table = num_cells == 0;
+        self
     }
 
     pub fn new(table: &'a mut Table, page_num: usize, cell_num: usize) -> Cursor {
@@ -31,7 +35,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub fn table_find(table: &'a mut Table, key: usize) -> Cursor {
+    pub fn table_find(table: &mut Table, key: usize) -> Cursor {
         let root_page_num = table.get_root_page_num();
         let root_node = table.get_pager_mut().get_node_mut(root_page_num);
 
@@ -125,13 +129,17 @@ impl<'a> Cursor<'a> {
 
     pub fn advance(&mut self) {
         self.cell_num += 1;
-        if self.cell_num >= self.table
-            .get_pager_mut()
-            .get_node_mut(self.page_num)
-            // -1 account for index vs count
-            .get_cell_count()
-        {
-            self.end_of_table = true;
+        let node = self.table.get_pager_mut().get_node_mut(self.page_num);
+
+        if self.cell_num >= node.get_cell_count() {
+            let next_page_num = node.get_next_leaf_num();
+            if next_page_num == 0 {
+                // This was the rightmost leaf
+                self.end_of_table = true;
+            } else {
+                self.page_num = next_page_num;
+                self.cell_num = 0;
+            }
         }
     }
 

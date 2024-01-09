@@ -48,11 +48,12 @@ fn main() {
 }
 
 fn execute_select(table: &mut Table) {
-    let mut cursor = Cursor::table_start(table);
-    while !cursor.is_end_of_table() {
-        let row = Row::deserialize(cursor.select()).unwrap();
+    let mut cursor = Cursor::table_find(table, 0);
+    let mut table_start_cursor = cursor.to_table_start();
+    while !table_start_cursor.is_end_of_table() {
+        let row = Row::deserialize(table_start_cursor.select()).unwrap();
         println!("{:?}", row);
-        cursor.advance();
+        table_start_cursor.advance();
     }
 }
 

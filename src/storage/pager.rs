@@ -3,7 +3,7 @@ use std::io;
 use std::io::{Read, Seek, Write};
 
 use crate::storage::constant::{LEAF_NODE_MAX_CELLS, PAGE_SIZE, TABLE_MAX_PAGES};
-use crate::storage::node::Node;
+use crate::storage::node::{Node, NodeType};
 
 pub struct Pager {
     file: File,
@@ -28,6 +28,40 @@ impl Pager {
             nodes_count,
             nodes: vec![None; TABLE_MAX_PAGES],
         })
+    }
+
+    pub fn print_tree(&self, page_num: usize, indentation: usize) {
+        if let Some(node) = &self.nodes[page_num] {
+            let indent = " ".repeat(indentation);
+            println!("{}Node Type: {:?}", indent, node.node_type);
+            println!("{}Is Root: {}", indent, node.is_root);
+            println!("{}Parent Page Num: {}", indent, node.parent_page_num);
+
+            match node.node_type {
+                NodeType::Leaf => {
+                    println!("{}Next Leaf Num: {}", indent, node.next_leaf_num);
+                    println!("{}Cells Count: {}", indent, node.cells_count);
+                    for cell in &node.cells {
+                        println!("{}Cell: {:?}", indent, cell.get_key());
+                    }
+                }
+                NodeType::Internal => {
+                    println!("{}Right Child Key: {}", indent, node.right_child_key);
+                    println!("{}Keys Count: {}", indent, node.keys_count);
+                    for key in &node.keys {
+                        println!("{}Key: {:?}", indent, key);
+                    }
+                    // Recursively print child nodes
+                    for key in &node.keys {
+                        self.print_tree(
+                            key.get_key(),
+                            indentation + 4,
+                        );
+                    }
+                    self.print_tree(node.right_child_key, indentation + 4);
+                }
+            }
+        }
     }
 
     pub fn get_empty_page_num(&mut self) -> usize {
@@ -72,6 +106,7 @@ impl Pager {
         }
 
         left_child_node.set_parent_page_num(root_page_num);
+        left_child_node.set_next_leaf_num(right_child_page_num);
 
         let mut new_root_node = Node::new_internal();
         new_root_node.set_parent_page_num(root_page_num);
@@ -95,15 +130,18 @@ impl Pager {
 
     // returning usize which is the new page num, but looks like a temp hack to me
     fn leaf_node_split_and_insert(&mut self, page_num: usize, cell_num: usize, key: &[u8], value: &[u8]) -> usize {
+        let nodes_count = self.nodes_count;
         let mut new_node = Node::new_leaf();
         let mut old_node = self.get_node_mut(page_num);
         new_node.set_parent_page_num(page_num);
+        new_node.set_next_leaf_num(old_node.get_next_leaf_num());
+        old_node.set_next_leaf_num(nodes_count);
 
         let old_node_new_max = old_node.get_cell_count() / 2;
 
         while old_node_new_max != old_node.get_cell_count() {
             let cell_copy = old_node.get_mut_cell(old_node_new_max).clone();
-            new_node.insert_cell(cell_copy, 0);
+            new_node.push_cell(cell_copy);
 
             old_node.remove_cell(old_node_new_max);
         }

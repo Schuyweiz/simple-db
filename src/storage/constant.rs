@@ -24,7 +24,10 @@ pub(crate) const SPACE_FOR_COMMON_HEADER: usize = NODE_TYPE_SIZE + IS_ROOT_SIZE 
 // leaf node constants
 pub(crate) const CELLS_COUNT_SIZE: usize = std::mem::size_of::<usize>();
 pub(crate) const CELLS_COUNT_OFFSET: usize = SPACE_FOR_COMMON_HEADER;
-pub(crate) const LEAF_NODE_HEADER_SIZE: usize = CELLS_COUNT_SIZE;
+pub const LEAF_NEXT_LEAF_SIZE: usize = std::mem::size_of::<usize>();
+pub const LEAF_NEXT_LEAF_OFFSET: usize = CELLS_COUNT_OFFSET + CELLS_COUNT_SIZE;
+
+pub(crate) const LEAF_NODE_HEADER_SIZE: usize = CELLS_COUNT_SIZE + LEAF_NEXT_LEAF_SIZE;
 
 pub(crate) const LEAF_NODE_CELLS_SPACE: usize = PAGE_SIZE - SPACE_FOR_COMMON_HEADER - LEAF_NODE_HEADER_SIZE;
 pub(crate) const LEAF_NODE_CELLS_OFFSET: usize = SPACE_FOR_COMMON_HEADER + LEAF_NODE_HEADER_SIZE;
